@@ -1,0 +1,27 @@
+---
+# tasks file for verifyService
+- name: RUN COMMAND 
+  bigip_command:
+    commands: show sys service restjavad
+    provider: "{{ providerA }}"
+  register: rawInfo
+  ignore_errors: yes 
+
+- name: EXTRACT STATE 
+  set_fact:
+    serviceState: "{{providerA.server}},{{item}}"
+  loop: "{{rawInfo.stdout}}"
+  ignore_errors: yes 
+
+- name: COMBINE DATA FOR ALL HOST
+  set_fact:
+    serviceStateCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'serviceState') | list | flatten }}"
+  run_once: yes
+  ignore_errors: yes 
+
+- name: DISPLAY
+  debug:
+    msg: "{{serviceStateCombine}}}"
+  run_once: true
+  ignore_errors: yes 
+

@@ -1,0 +1,72 @@
+---
+- name: EXTRACT AND FILTER SELF IP INFORMATION 
+  hosts: allF5 
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  tasks:
+    - name: COLLECT F5 FACT, SUBSET self-ips
+      bigip_device_facts:
+        gather_subset: 
+          - self-ips 
+        provider: "{{ providerA }}"
+      register: rawInfo
+
+    - name: EXTRACT self_ips FROM rawInfo AND STORE IN VAR selfIPInfo
+      set_fact:
+        selfIPInfo: "{{ rawInfo.self_ips}}"
+
+    - name: FILTER INFORMATION AND STORE IT IN VAR selfIP
+      set_fact:
+        selfIP: "{{selfIP|default([]) + [item.address + ',' + item.netmask + ',Floating:' + item.floating + ',Name:' + item.name +',' + item.traffic_group +',' + item.vlan + ',' + providerA.server]}}"
+      loop: "{{selfIPInfo}}"
+      vars:
+        makeRow: []
+
+    - name: CREATE FILE TO STORE VAR selfIP(LIST) VALUE
+      file:
+        path: "selfIPInfo.txt"
+        state: touch
+      run_once: true
+
+    - name: COMBINE DATA IN VAR selfIP (LIST) FOR EACH HOST AND FLATTEN THE THE LIST INTO VAR selfIPCombine
+      set_fact:
+        selfIPCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'selfIP') | list | flatten }}"
+      run_once: yes
+
+    - name: STORE DATA FROM VAR selfIPCOmbine INTO selfIPInfo.txt
+      copy:
+        dest: "selfIPInfo.txt"
+        content: "{{selfIPCombine}}"
+      run_once: true
+    
+    - name: EXTRACT FAILED HOSTNAME AND STORE IT IN VAR failedHost
+      set_fact: 
+        failedHost: " {{ ansible_play_hosts_all| difference(ansible_play_batch) }}"
+
+    - name: CREATE FILE TO STORE VALUE FROM VAR failedHost 
+      file:
+        path: "failedHost.txt"
+        state: touch
+      run_once: true
+
+    - name: STORE DATA FROM VAR failedHost INTO A FILE
+      copy:
+        dest: "failedHost.txt"
+        content: "{{failedHost}}"
+      run_once: true
+
+    - name: DISPLAY SELF IP LIST
+      debug:
+        msg: "{{selfIPCombine}}"
+      run_once: true
+
+    - name: DISPLAY FAILED HOST
+      debug:
+        msg: "{{failedHost}}"
+      run_once: true

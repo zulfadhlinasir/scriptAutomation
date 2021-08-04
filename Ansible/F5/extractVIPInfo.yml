@@ -1,0 +1,68 @@
+---
+- name: EXTRACT AND FILTER VIP INFORMATION 
+  hosts: allF5 
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  tasks:
+    - name: COLLECT F5 FACT, SUBSET virtual-servers 
+      bigip_device_info:
+        gather_subset: 
+          - virtual-servers 
+        provider: "{{ providerA }}"
+      register: rawInfo
+
+    - name: EXTRACT virtual_servers VALUE FROM rawInfo AND STORE IN VAR vipRawInfo
+      set_fact:
+        vipRawInfo: "{{ rawInfo.virtual_servers}}"
+
+    - name: FILTER INFORMATION AND STORE IT IN VAR vipData(LIST)
+      set_fact:
+        #makeRow: "VIP name: {{item.name}},VIP availability: {{item.availability_status}},VIP Protocol: {{item.protocol}}, VIP type: {{item.type}},VIP destination: {{item.destination}},Default Pool: {{item.default_pool | default('NA') }},{{providerA.server}}"
+        vipData: "{{vipData|default([]) + [item.name + ',' + item.destination + ',' + (item.default_pool|default('NA')) + ',' + providerA.server]}}"
+      loop: "{{ vipRawInfo }}"
+      #loop: "{{ vipRawInfo|subelements('profiles') }}"
+      #vars:
+        #makeRow: []
+
+    - name: COMBINE DATA IN VAR poolName (LIST) FOR EACH HOST AND FLATTEN THE THE LIST INTO VAR poolCombine
+      set_fact:
+        vipDataCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'vipData') | list | flatten }}"
+      run_once: yes
+
+    - name: EXTRACT FAILED HOSTNAME AND STORE IT IN VAR failedHost
+      set_fact: 
+        failedHost: " {{ ansible_play_hosts_all| difference(ansible_play_batch) }}"
+
+    - name: CREATE FILE TO STORE VALUE FROM VAR failedHost 
+      file:
+        path: "failedHost.txt"
+        state: touch
+      run_once: true
+
+    - name: STORE DATA FROM VAR failedHost INTO A FILE
+      copy:
+        dest: "failedHost.txt"
+        content: "{{failedHost}}"
+      run_once: true
+
+    - name: STORE DATA FROM VAR poolCOmbine INTO A FILE
+      copy:
+        dest: "vipInfo.txt"
+        content: "{{vipDataCombine}}"
+      run_once: true
+      
+    - name: DISPLAY VIP INFORMATION
+      debug:
+        msg: "{{vipDataCombine}}}"
+      run_once: true
+      
+    - name: DISPLAY FAILED HOST
+      debug:
+        msg: "{{failedHost}}}"
+      run_once: true

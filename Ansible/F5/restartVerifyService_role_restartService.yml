@@ -1,0 +1,12 @@
+---
+# tasks file for restartService
+- name: RUN COMMAND to RESTART SERVICE
+  bigip_command:
+    commands: restart sys service restjavad
+    provider: "{{ providerA }}"
+  register: rawInfo
+  ignore_errors: yes 
+
+# - name: DISPLAY
+#   debug:
+#     msg: "{{rawInfo}}}"

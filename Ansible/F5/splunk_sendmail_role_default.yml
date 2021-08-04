@@ -1,0 +1,19 @@
+---
+# defaults file for sendmail
+sendmail_host: "smtp server"
+sendmail_port: "25"
+sendmail_from: "ansibl@email"
+sendmail_to:
+   - xxxx@email
+  #- ajdjs@enail
+sendmail_cc: ""
+sendmail_subject: "Ansible Report - APM Self Healing"
+sendmail_body: |
+  Report:
+  Based from splunk log (gothere/splunk_apm_issueA), {{ profile_fact }} in {{nodelabel_fact}} was detected having issue.
+
+  Action Taken:
+  {{action_fact}}
+#sendmail_attach:
+#  - tmp/asareport.xls
+#sendmail_subtype: "html"
