@@ -1,0 +1,74 @@
+#This is raw Ansible Playbook which store the data in file
+---
+- name: EXTRACT AND FILTER F5 POOL MEMBER INFORMATION
+  hosts: allF5 
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  tasks:
+    - name: COLLECT F5 FACT, SUBSET LTM-POOLS
+      bigip_device_info:
+        gather_subset: 
+          - ltm-pools
+        provider: "{{ providerA }}"
+      register: rawInfo
+
+    - name: EXTRACT ltm_pools VALUE FROM rawInfo AND STORE IN VAR ltmPools
+      set_fact:
+        ltmPools: "{{ rawInfo.ltm_pools }}"
+
+    - name: FILTER INFORMATION AND STORE IT IN VAR poolName (LIST)
+      set_fact:
+        makeRow: "{{ item.0.name }},Server Side Current Connection: {{item.0.server_side_current_connections}},{{item.1.address}},{{item.1.name}},{{item.1.real_state}},{{providerA.server}}"
+        poolName: "{{poolName|default([]) + ['{{makeRow}}']}}"
+      loop: "{{ ltmPools|subelements('members', skip_missing=True) }}"
+      vars:
+        makeRow: []
+
+    - name: CREATE FILE TO STORE VAR poolName (LIST) VALUE
+      file:
+        path: "poolInfo.txt"
+        state: touch
+      run_once: true
+
+    - name: COMBINE DATA IN VAR poolName (LIST) FOR EACH HOST AND FLATTEN THE THE LIST INTO VAR poolCombine
+      set_fact:
+        poolCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'poolName') | list | flatten }}"
+      run_once: yes
+   
+    - name: STORE DATA FROM VAR poolCOmbine INTO A FILE
+      copy:
+        dest: "poolInfo.txt"
+        content: "{{poolCombine}}"
+      run_once: true
+    
+    - name: EXTRACT FAILED HOSTNAME AND STORE IT IN VAR failedHost
+      set_fact: 
+        failedHost: " {{ ansible_play_hosts_all| difference(ansible_play_batch) }}"
+
+    - name: CREATE FILE TO STORE VALUE FROM VAR failedHost 
+      file:
+        path: "failedHost.txt"
+        state: touch
+      run_once: true
+
+    - name: STORE DATA FROM VAR failedHost INTO A FILE
+      copy:
+        dest: "failedHost.txt"
+        content: "{{failedHost}}"
+      run_once: true
+      
+    - name: DISPLAY LIST OF var poolCombine
+      debug:
+        msg: "{{poolCombine}}"
+      run_once: true
+        
+    - name: DISPLAY FAILED HOST
+      debug:
+        msg: "{{failedHost}}"
+      run_once: true

@@ -1,0 +1,162 @@
+---
+- name: EXTRACT AND FILTER VIP INFORMATION 
+  hosts: oneF5
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  tasks:
+    - name: COLLECT F5 FACT
+      bigip_device_info:  
+        gather_subset: 
+          - virtual-servers 
+          - ltm-pools
+        provider: "{{ providerA }}"
+      register: rawInfo
+
+    - name: EXTRACT virtual_servers VALUE FROM rawInfo AND STORE IN VAR vipRawInfo
+      set_fact:
+        vipRawInfo: "{{ rawInfo.virtual_servers}}"
+    
+    - name: EXTRACT ltm_pools VALUE FROM rawInfo AND STORE IN VAR ltmPools
+      set_fact:
+        ltmPools: "{{ rawInfo.ltm_pools }}"
+
+    - name: FILTER VIP INFORMATION AND STORE IT IN VAR vipData(LIST)
+      set_fact:
+        #makeRow: "VIP name: {{item.name}},VIP availability: {{item.availability_status}},VIP Protocol: {{item.protocol}}, VIP type: {{item.type}},VIP destination: {{item.destination}},Default Pool: {{item.default_pool | default('NA') }},{{providerA.server}}"
+        vipData: "{{vipData|default([]) + [item.name + ',' + item.destination + ',' + (item.default_pool|default('NA')) + ',' + providerA.server]}}"
+      loop: "{{ vipRawInfo }}"
+      #loop: "{{ vipRawInfo|subelements('profiles') }}"
+      #vars:
+        #makeRow: []
+    
+    - name: FILTER Pool INFORMATION AND STORE IT IN VAR poolName (LIST)
+      set_fact:
+        # makeRow: "{{ item.0.name }},Server Side Current Connection: {{item.0.server_side_current_connections}},{{item.1.address}},{{item.1.name}},{{item.1.real_state}},{{providerA.server}}"
+        # poolName: "{{poolName|default([]) + ['{{makeRow}}']}}"
+        poolName: "{{poolName|default([]) + [item.0.name + ',' + item.1.address + ',' + item.1.name + ',' + item.1.real_state + ',' + providerA.server]}}"
+      loop: "{{ ltmPools|subelements('members', skip_missing=True) }}"
+      vars:
+        makeRow: []
+        
+    - name: IF poolName is defined
+      block:
+        - name: Match VIP with Pool if poolName defined
+          set_fact:
+            vipPoolMatch: "{{vipPoolMatch|default([]) + [item.0.split(',')[0] + ',' + item.0.split(',')[1] + ',' + item.1]}}"
+          loop: "{{ vipData|product(poolName)|list }}"
+          when: item.1.split(',')[4] in item.0 and item.1.split(',')[0] in item.0 
+        - name: Convert vipData to single column array (Only Pool Name) if poolName defined
+          set_fact:
+            vipData_PoolColumn: "{{vipData_PoolColumn|default([]) + [item.split(',')[2]]}}"
+          loop: "{{vipData}}"
+        - name: EXTRACT ORPHAN POOL (COMPARE AGAINST LIST vipPoolMatch) if poolName defined
+          set_fact:
+            poolOrphan: "{{poolOrphan|default([]) + ['NA' + ',' + 'NA' + ',' + item]}}"
+          loop: "{{ poolName }}"
+          when: item.split(',')[0] not in vipData_PoolColumn
+      when: poolName is defined 
+
+    - name: Extract Standalone VIP
+      set_fact:
+        vipStandalone: "{{vipStandalone|default([]) +[item.split(',')[0] + ',' + item.split(',')[1] + ',' + item.split(',')[2] + ',' + 'NA' + ',' + 'NA' + ',' + 'NA' + ',' + item.split(',')[3]]}}"
+      loop: "{{vipData}}"
+      when: "'NA' in item.split(',')[2]"
+
+##############################################################################################################################
+    - name: WHEN vipPoolMatch EXISTS
+      block:
+        - name: WHEN vipStandalone EXISTS 
+          block:
+            - name: COMBINE (VIP with Pool) with VIP Standalone and Orphan Pool - If Orphan Pool Exist
+              set_fact:
+                vipPoolData: "{{vipPoolMatch + vipStandalone + poolOrphan}}"
+              when: poolOrphan is defined
+
+            - name: COMBINE (VIP with Pool) with VIP Standalone - If Orphan Pool Doesnt Exist
+              set_fact:
+                vipPoolData: "{{vipPoolMatch + vipStandalone}}"
+              when: poolOrphan is not defined
+          when: vipStandalone is defined
+
+        - name: WHEN vipStandalone DOES NOT EXISTS 
+          block:
+            - name: COMBINE (VIP with Pool) with VIP Standalone and Orphan Pool - If Orphan Pool Exist
+              set_fact:
+                vipPoolData: "{{vipPoolMatch + poolOrphan}}"
+              when: poolOrphan is defined
+
+            - name: COMBINE (VIP with Pool) with VIP Standalone - If Orphan Pool Doesnt Exist
+              set_fact:
+                vipPoolData: "{{vipPoolMatch }}"
+              when: poolOrphan is not defined
+          when: vipStandalone is not defined
+      when: vipPoolMatch is defined
+##############################################################################################################################
+    - name: WHEN vipPoolMatch DOES NOT EXISTS
+      block:
+        - name: WHEN vipStandalone EXISTS 
+          block:
+            - name: EXIST - vipStandalone and poolOrphan , NONE - vipPoolMatch
+              set_fact:
+                vipPoolData: "{{vipStandalone + poolOrphan}}"
+              when: poolOrphan is defined
+
+            - name: EXIST - vipStandalone , NONE - vipPoolMatch and poolOrphan
+              set_fact:
+                vipPoolData: "{{vipStandalone}}"
+              when: poolOrphan is not defined
+          when: vipStandalone is defined
+
+        - name: WHEN vipStandalone DOES NOT EXISTS 
+          block:
+            - name: EXIST - poolOrphan , NONE - vipStandalone and vipPoolMatch
+              set_fact:
+                vipPoolData: "{{poolOrphan}}"
+              when: poolOrphan is defined
+
+            - name: NONE - vipStandalone, vipPoolMatch and poolOrphan
+              set_fact:
+                vipPoolData: []
+              when: poolOrphan is not defined
+          when: vipStandalone is not defined
+      when: vipPoolMatch is not defined
+##############################################################################################################################
+
+
+    - name: COMBINE DATA IN VAR vipPoolData (LIST) FOR EACH HOST AND FLATTEN THE THE LIST INTO VAR vipPoolCombine
+      set_fact:
+        vipPoolCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'vipPoolData') | list | flatten }}"
+      run_once: yes
+
+    - name: CREATE FILE TO STORE VALUE FROM VAR vipPoolCombine
+      file:
+        path: "vipPoolInfo.txt"
+        state: touch
+      run_once: true
+
+    - name: STORE DATA FROM VAR vipPoolCombineINTO A FILE
+      copy:
+        dest: "vipPoolInfo.txt"
+        content: "{{vipPoolCombine}}"
+      run_once: true
+
+    - name: DISPLAY FINAL VIP and POOL LIST
+      debug:
+        msg: "{{vipPoolCombine}}"
+      run_once: yes
+
+    - name: EXTRACT FAILED HOST 
+      set_fact: 
+        failedHost: " {{ ansible_play_hosts_all| difference(ansible_play_batch) }}"
+      run_once: true
+      
+    - name: DISPLAY FAILED HOST
+      debug:
+        msg: "{{failedHost}}}"
+      run_once: true

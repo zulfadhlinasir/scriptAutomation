@@ -1,0 +1,22 @@
+- name: VERIFY F5 SERVICE RESTJAVAD
+  hosts: oneF5 
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  # roles:
+  #   - verifyService
+  tasks:
+    - name: Restart Service 
+      include_role:
+        name: restartService
+    - name: Pause for 1 minutes to build app cache
+      pause:
+        seconds: 45
+    - name: Verify Service 
+      include_role:
+        name: verifyService

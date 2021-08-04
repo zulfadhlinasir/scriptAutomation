@@ -1,0 +1,234 @@
+---
+# tasks file for splunk
+- name: Execute query to capture data using splunk2panda module
+#      command: 'python3 ./roles/splunk/files/test_splunk.py {{ splunk_server }} {{ ansible_user  | b64encode }} {{ ansible_httpapi_pass | b64encode }}'
+#      script: "{{ playbook_dir }}/roles/splunk/files/test_splunk.py {{ splunk_server }} {{ ansible_user  | b64encode }} {{ ansible_httpapi_pass | b64encode }}"
+#      script: "{{ playbook_dir }}/roles/splunk/files/test_splunk.py {{playbook_dir}}/group_vars" #Use import var files
+  script: "{{ playbook_dir }}/roles/splunk/files/test_splunk.py" #Encrypt query file
+  args:
+    executable: python3
+  environment:
+    - PYTHONPATH: "{{ playbook_dir }}/roles/splunk/files/"
+    - PYTHONDONTWRITEBYTECODE: 1 #This line to suppress the __pycache__
+  register: output_splunk
+
+- name: Set fact to store info
+  set_fact:
+    alert_date_fact: "{{ item.alert_date }}"
+    ipaddr_fact: "{{ item.ipaddr }}"
+    nodelabel_fact: "{{ item.nodelabel }}"
+    nodelabel_fact_filtered: "{{ item.nodelabel | regex_findall('([A-Z]*-[A-Z]*)\\d')}}"
+    profile_fact: "{{ item.profile }}"
+  with_items: "{{output_splunk.stdout}}"
+  # when: item.profile == "wolffe_fox.com"
+
+- debug: msg="##STORED FACTS - {{ alert_date_fact }} - {{ ipaddr_fact }} - {{ nodelabel_fact }} - filtered nodelabel= {{nodelabel_fact_filtered[0]}} - {{ profile_fact }} "
+
+- name: "Reading apm_profile_list.cv"
+  read_csv:
+    path: "{{ playbook_dir }}/roles/splunk/vars/apm_profile_list.csv"
+  register: apm_profile_list
+
+- name: Compare extracted data from splunk agains apm_profile_list.csv
+  set_fact: 
+    vip_name_csv_fact: "{{item.VIPName}}"
+    vip_destination_csv_fact: "{{item.VIPDestination}}"
+    access_profile_csv_fact: "{{item.AccessProfile}}"
+    f5_csv_fact: "{{item.F5}}"
+  loop: "{{apm_profile_list.list}}" 
+  when: item.VIPName == "wolffe_fox.com" and item.F5 == "<F5 hostname>"
+  # when: item.VIPName == profile_fact and item.F5 == nodelabel_fact
+
+# - name: Exit when no splunk data matched aginst csv 
+#   fail: msg="Splunk data not matched with csv information"
+#   when: vip_name_csv_fact is undefined or vip_destination_csv_fact is undefined or access_profile_csv_fact is undefined or f5_csv_fact is undefined 
+
+#Terminate play when no splunk data matched aginst csv  
+- name: Exit when no splunk data matched aginst csv 
+  block:
+    - name: set_fact to pass to sendmail role
+      set_fact: 
+        action_fact: "No action taken because splunk data is not matched with csv information"
+
+    - name: Terminate play because no splunk data matched aginst csv 
+      fail: msg="Splunk data does not matched with csv information"
+  when: vip_name_csv_fact is undefined or vip_destination_csv_fact is undefined or access_profile_csv_fact is undefined or f5_csv_fact is undefined 
+
+
+- name: Display information extracted from csv file - VIP Name, VIP destination, Access Profile, Server
+  debug: 
+    msg: "{{vip_name_csv_fact}}  {{vip_destination_csv_fact}}  {{access_profile_csv_fact}}   {{f5_csv_fact}} profile_fact: {{profile_fact}}"
+  
+# https://docs.ansible.com/ansible/latest/collections/f5networks/f5_modules/bigip_device_info_module.html#ansible-collections-f5networks-f5-modules-bigip-device-info-module
+- name: Collect facts from GTM
+  bigip_device_info:
+    gather_subset:
+    # - gtm-servers
+      - gtm-a-wide-ips
+      - gtm-a-pools
+    provider:
+      server: <f5gtmhostname>
+      user: "{{ gtm_user }}"
+      password: "{{ gtm_password }}"
+#        validate_certs: no
+  delegate_to: localhost
+  register: pool_facts_output
+
+- name: Set fact to store output from gtm wide ips facts
+  set_fact:
+    wip_name_fact: "{{ wip_name_fact | default ([]) + [item.0.name] }}"
+    pool_name_fact: "{{ pool_name_fact | default ([]) + [item.1.name] }}"
+    wip_with_pool_fact: "{{wip_with_pool_fact | default ([]) + [item.0.name + ',' + item.1.name]}}"
+  with_subelements: 
+    - "{{ pool_facts_output['gtm_a_wide_ips'] }}"
+    - pools
+  when: item.0.name in vip_name_csv_fact
+  # when: item.0.name in profile_fact
+
+#Terminate play when WIP name not found 
+- name: Exit when WIP name is not found 
+  block:
+    - name: set_fact to pass to sendmail role
+      set_fact: 
+        action_fact: "No WIP found for {{vip_name_csv_fact}}"
+
+    - name: Terminate play
+      fail: msg="No WIP found for {{vip_name_csv_fact}}"
+  when: wip_name_fact is undefined
+      
+- name: Display pool name from gtm wide ips facts
+  debug: msg="### THIS IS OUTPUT GTM WIDE IPS => POOL_NAME={{ pool_name_fact }}"
+
+- name: Set fact to store output from gtm pools facts
+  set_fact:
+    pool_member_name_fact: "{{ pool_member_name_fact | default ([]) + [item.1.name] }}"
+    pool_member_enabled_fact: "{{ pool_member_enabled_fact | default ([]) + [item.1.enabled] }}"
+    pool_name_fact: "{{ pool_name_fact | default ([]) + [item.1.name] }}"
+    pool_name_with_member: "{{ pool_name_with_member | default ([]) + [item.0.name + ',' + item.1.name]}}"
+  #debug: msg="### THIS IS OUTPUT =>  ALTERNATE_MODE={{ item.0.alternate_mode }} - FULL_PATH={{ item.0.full_path }} - DISABLED={{ item.1.disabled }} - ENABLED={{ item.1.enabled }} - NAME={{ item.1.name }}"
+  #debug: msg="### THIS IS OUTPUT => alternate_mode={{ item.alternate_mode }} - full_path={{ item.full_path }} - disabled={{ item.disabled }} - enabled={{ item.enabled }} - NAME={{ item.1.name }}"
+  #debug: msg="###### THIS IS OUTPUT - {{ item.members }}"
+  #debug: msg="###### THIS IS OUTPUT - Disabled={{ item.disabled }} - Enabled={{ item.enabled }} - Name={{ item.name }}"
+  #with_items: "{{ pool_facts_output['ansible_facts']['ansible_net_gtm_a_pools'] }}"
+  with_subelements: 
+    - "{{ pool_facts_output['gtm_a_pools'] }}"
+    # - "{{ pool_facts_output['ansible_facts']['ansible_net_gtm_a_pools'] }}"
+    - members
+  when: item.0.name in pool_name_fact and item.1.enabled == "yes"
+  # when: item.0.name == "testpool" and item.1.enabled == "yes"
+
+
+- name: Display pool member name from gtm pools facts that is/are enabled
+  debug: msg="### THIS IS OUTPUT GTM POOL that is/are enabled based on Access Profile= {{access_profile_csv_fact}} associated with VIP= {{vip_name_csv_fact}} => POOL_MEMBER_NAME={{ pool_member_name_fact }}"
+
+
+- name: Run command on F5 to store pool member state/availability
+  bigip_command:
+    commands: show gtm server {{item.split(':')[0]}} virtual-servers | grep {{item.split(':')[1]}} -A 20 | grep -E "Avai|State" 
+    provider:
+      server: <gtm hostname>
+      user: "{{ gtm_user }}"
+      password: "{{ gtm_password }}"
+  delegate_to: localhost
+  register: pool_member_state_fact
+  with_items: "{{ pool_member_name_fact }}"
+
+# - name: Extract VIP state and availability
+#   set_fact:
+#     vip_name_fact: "{{item.item}}"
+#     vip_enabled_fact: "{{item.stdout_lines|regex_findall('\bAvailability :\\K\\S*')| last}}"
+#     vip_availability_fact: "{{item.stdout_lines|regex_findall('\bAvailability :\\K\\S*) | first}}"
+#     vip_info_fact: "{{vip_info_fact | default ([]) + [item.item + ',' + item.stdout_lines|regex_findall('\bAvailability :\\K\\S*') | first ]}}"
+#     # vip_info_fact: "{{vip_info_fact | default ([]) + [item.item + ',' + {{item.stdout_lines|regex_findall('Availability :\\s+(\\S+)') | last }} + ',' + {{item.stdout_lines|regex_findall('State :\\s+(\\S+)')| last}}]}}"
+#   with_items: "{{ pool_member_state_fact.results }}"
+#   vars:
+#     vip_name_fact: []
+#     vip_availability_fact: []
+#     vip_enabled_fact: []
+
+- name: Extract VIP state and availability
+  set_fact:
+    vip_name_fact: "{{item.item}}"
+    # vip_enabled_fact: "{{item.stdout_lines|regex_findall('State :\\s+(\\S+)')| string}}"
+    vip_availability_fact: "{{item.stdout_lines|regex_findall(regexA)}}"
+    # vip_availability_fact: "{{item.stdout_lines|regex_search('(available)')[0]}}"
+    # vip_info_fact: "{{vip_info_fact | default ([]) + [item.item + ',' + item.stdout_lines|regex_findall('Availability :\\s+(\\S+)') | string ]}}"
+    vip_info_fact: "{{vip_info_fact | default ([]) + [item.item + ',' + item.stdout_lines|regex_search('(available)')]}}"
+  with_items: "{{ pool_member_state_fact.results }}"
+  vars:
+    vip_name_fact: []
+    vip_availability_fact: []
+    vip_enabled_fact: []
+    regexA: '\bAvailability : \\K\\S*'
+
+- name: DISPLAY Extract
+  debug:
+    msg: "{{vip_availability_fact}}"
+#Can break escape error here if the extracted VIP (vip_name_fact) doesnt contain server (nodelabel_fact_filtered) that triggered splunk log
+- name: Extract pool name, pool member(VIP) and server(LTM pair)
+  set_fact:
+    pool_name_fact: "{{item.split(',')[0]}}"
+    vip_name_fact: "{{item.split(':')[1]}}"
+    server_name_fact: "{{item | regex_findall(',(.*)(?=:)')}}"
+    # msg: "Pool Name: {{item.split(',')[0]}}, VIP name: {{item.split(':')[1]}}, Server Name: {{item | regex_findall(,(.*)(?=:))}}"
+  with_items: "{{pool_name_with_member}}"
+  when: item.split(':')[1] == vip_name_csv_fact 
+  # when: item.split(':')[1] == profile_fact 
+
+- name: Proceed shutdown pool member if extracted server = server that trigger splunk log
+  block:
+    - name: Display pool name with pool member(VIP) 
+      debug:
+        msg: "{{  pool_name_with_member }}"
+
+    - name: Count number of available VIP in {{wip_name_fact[0]}}
+      debug:
+        msg: "{{vip_info_fact|length}} VIP are up"
+
+    - name: Display WIP name, pool name, pool member(VIP) and server(LTM pair)
+      debug:
+        msg: "WIP Name: {{wip_name_fact[0]}}, Pool Name: {{pool_name_fact}}, VIP name: {{vip_name_fact}}, Server Name: {{server_name_fact[0]}}"
+
+    - name: If available VIP >=2
+      debug:
+        msg: "Available VIP is >= 2, proceeding to shut down {{server_name_fact[0]}}:{{vip_name_fact}} in {{pool_name_fact}}"
+      when: (vip_info_fact | regex_findall('available') | length) >= 2
+
+    - name: Display VIP availability
+      debug:
+        msg: "{{vip_info_fact}}"
+
+
+    # task to Shutdown VIP (Information required: pool name, pool member(VIP), and server(LTM pairs) 
+    - name: Disable pool member
+      bigip_gtm_pool_member:
+        pool: test-na-wolffe.exxonmobil.com-pl
+        server_name: "{{server_name_fact[0]}}"
+        virtual_server: "{{vip_name_fact}}"
+        type: a
+        state: disabled
+        provider:
+          password: "{{ gtm_password }}"
+          server: < gtm=hostname.
+          user: "{{ gtm_user }}"
+      delegate_to: localhost
+      when: (vip_info_fact | regex_findall('available') | length) >= 1
+
+    - name: Set fact to pass information for role sendmail
+      set_fact:
+        action_fact: "VIP: {{server_name_fact[0]}}:{{vip_name_fact}} in Pool: {{pool_name_fact}} in WIP: {{wip_name_fact[0]}} is being shutdown"
+
+  when: nodelabel_fact_filtered[0] in server_name_fact[0]
+
+- name: No shutdown as VIP is not enabled/unavailable
+  debug: 
+    msg: "Server that triggering splunk log :{{nodelabel_fact_filtered[0]}} vs Extracted server: {{server_name_fact[0]}}"
+  when: nodelabel_fact_filtered[0] not in server_name_fact[0]
+
+- name: Set fact to pass information for role sendmail when VIP is not enabled/unavailable
+  set_fact: 
+    action_fact: "No action taken because VIP: {{server_name_fact[0]}}:{{vip_name_fact}} in Pool: {{pool_name_fact}} in WIP: {{wip_name_fact[0]}} is not enabled/unavailable "
+  when: nodelabel_fact_filtered[0] not in server_name_fact[0]
+
+
+

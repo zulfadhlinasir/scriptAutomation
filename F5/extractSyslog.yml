@@ -1,0 +1,69 @@
+---
+- name: EXTRACT AND FILTER SELF IP INFORMATION 
+  hosts: allF5 
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  tasks:
+    - name: COLLECT F5 FACT, SUBSET remote-syslog
+      bigip_device_facts:
+        gather_subset: 
+          - remote-syslog 
+        provider: "{{ providerA }}"
+      register: rawInfo
+
+    - name: FILTER INFORMATION AND STORE IT IN VAR syslog_info 
+      set_fact:
+        syslog_info: "{{syslog_info|default([]) + [item.local_ip + ',' + item.name + ',' + item.remote_host + ',' + 'remote_port' + ',' + providerA.server]}}"
+      loop: "{{rawInfo.remote_syslog['servers']}}"
+      vars:
+        makeRow: []
+
+    - name: CREATE FILE TO STORE VAR syslog_info(LIST) VALUE
+      file:
+        path: "syslogInfo.txt"
+        state: touch
+      run_once: true
+
+    - name: COMBINE DATA IN VAR syslog_info (LIST) FOR EACH HOST AND FLATTEN THE THE LIST INTO VAR syslog_infoCombine
+      set_fact:
+        syslog_infoCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'syslog_info') | list | flatten }}"
+      run_once: yes
+
+    - name: STORE DATA FROM VAR syslog_infoCOmbine INTO syslogInfo.txt
+      copy:
+        dest: "syslogInfo.txt"
+        content: "{{syslog_infoCombine}}"
+      run_once: true
+    
+    - name: EXTRACT FAILED HOSTNAME AND STORE IT IN VAR failedHost
+      set_fact: 
+        failedHost: " {{ ansible_play_hosts_all| difference(ansible_play_batch) }}"
+
+    - name: CREATE FILE TO STORE VALUE FROM VAR failedHost 
+      file:
+        path: "failedHost.txt"
+        state: touch
+      run_once: true
+
+    - name: STORE DATA FROM VAR failedHost INTO A FILE
+      copy:
+        dest: "failedHost.txt"
+        content: "{{failedHost}}"
+      run_once: true
+
+    - name: DISPLAY Syslog LIST
+      debug:
+        msg: "{{syslog_infoCombine}}"
+      run_once: true
+
+    - name: DISPLAY FAILED HOST
+      debug:
+        msg: "{{failedHost}}"
+      run_once: true
+

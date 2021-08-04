@@ -1,0 +1,80 @@
+---
+- name: EXTRACT AND FILTER VIP INFORMATION 
+  hosts: apmIGW
+  connection: local 
+  gather_facts: no 
+  vars:
+    providerA:
+      password: "{{ password }}"
+      server: "{{ ansible_host}}"
+      user: "{{ user }}"
+      validate_certs: False
+  tasks:
+    - name: COLLECT F5 FACT, SUBSET virtual-servers 
+      bigip_device_info:
+        gather_subset: 
+          - apm-access-policies  
+          - virtual-servers 
+        provider: "{{ providerA }}"
+      register: rawInfo
+    
+    - name: COLLECT ACCESS PROFILE NAME
+      set_fact: 
+        apmProfile: "{{item.full_path}}"
+        apmProfileCombine: "{{apmProfileCombine|default([]) + [apmProfile]}}"
+      loop: "{{rawInfo.apm_access_policies}}"
+      vars:
+        apmProfile: []
+
+    - name: Collect VIP INFO
+      set_fact:
+        vipInfo: "{{vipInfo|default([]) + [item.0.name + ',' + item.0.destination + ',' + item.1.full_path + ',' + providerA.server]}}"
+      loop: "{{ rawInfo.virtual_servers|subelements('profiles', skip_missing=True) }}"
+
+    - name: FILTER ASSOCIATED VIP and ACCESS PROFILE
+      set_fact:
+        matchedAPMProfile: "{{matchedAPMProfile|default([]) + [item]}}" 
+      loop: "{{ vipInfo }}"
+      when: (item.split(',')[2] in apmProfileCombine)
+
+ 
+    - name: COMBINE DATA IN VAR matchedAPMProfile (LIST) FOR EACH HOST AND FLATTEN THE THE LIST INTO VAR poolCombine
+      set_fact:
+        matchedAPMProfileCombine: "{{ ansible_play_hosts | map('extract', hostvars, 'matchedAPMProfile') | list | flatten }}"
+      run_once: yes
+
+    - name: EXTRACT FAILED HOSTNAME AND STORE IT IN VAR failedHost
+      set_fact: 
+        failedHost: " {{ ansible_play_hosts_all| difference(ansible_play_batch) }}"
+
+    - name: CREATE FILE TO STORE VALUE FROM VAR failedHost 
+      file:
+        path: "failedHost.txt"
+        state: touch
+      run_once: true
+
+    - name: STORE DATA FROM VAR failedHost INTO A FILE
+      copy:
+        dest: "failedHost.txt"
+        content: "{{failedHost}}"
+      run_once: true
+
+    - name: STORE DATA FROM VAR matchedAPMProfileCombine INTO A FILE
+      copy:
+        dest: "APMProfile.txt"
+        content: "{{matchedAPMProfileCombine}}"
+      run_once: true
+      
+    - name: DISPLAY VIP INFORMATION
+      debug:
+        msg: "{{matchedAPMProfileCombine}}}}"
+      run_once: true
+      
+    - name: DISPLAY FAILED HOST
+      debug:
+        msg: "{{failedHost}}}"
+      run_once: true
+
+    - name: DISPLAY VIP WITH ACCESS PROFILE
+      debug: 
+        msg: "{{matchedAPMProfile}}"
