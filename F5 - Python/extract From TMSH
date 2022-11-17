@@ -1,0 +1,114 @@
+#fsafsa
+import re
+import pandas
+
+openFile="b"
+#####################################################
+#FOR POOL 
+def elementPosition():
+  locationPoolCombine=[]
+  with open("b",'r+') as f:
+   lines = f.readlines()
+   for i in (range(0,len(lines))):
+     if 'ltm pool' in lines[i]:
+         locationPool=(i)
+         locationPoolCombine.append(locationPool)
+   enum= (list(enumerate(locationPoolCombine)))
+   return locationPoolCombine,enum;
+       
+
+#####################################################
+##FOR POOL
+#EXTRACT THE INDEX AND VALUE(POOL NAME)
+def indexValueExtract():
+  #with openFile as f:
+  with open(openFile,'r+') as f:
+    poolLine=[]
+    lines = f.readlines()
+    l = len(lines)
+    #print ("Length of LTM Pool Info List is:",l)
+    for index,obj in enumerate(lines):
+      if 'ltm pool' in obj:
+        #Print Index with its Value
+        #print ("Index is:",index,"&&& Value is:",obj)
+        poolLineBeforeAppend=(index,obj)
+        poolLine.append(poolLineBeforeAppend)
+    return poolLine
+#####################################################
+
+#####################################################
+##FOR POOL
+def loopBetweenPool2nd(xindexValue):
+ i=0
+ #INITIALIZE LIST
+ poolMemberTotal=[]
+ poolMemberTotalWithOtherPool=[]
+ print ("2ND FUNCTION")
+ for x,y in indexValue:
+  #PRINT ACTUALPOOL LIST INDEX AND VALUE
+  #SCAN FROM BEGINNING TO THE SECOND LAST OF LTM POOL
+   if i < x: 
+     with open(openFile,'r+') as f:
+      lines = f.readlines()
+      #l IS LENGTH OF LIST
+      l = len(lines)
+      #VERIFY IF RANGE IS CORRECTLY RECORDED
+      #print (range(indexValue[i][1],indexValue[i+1][1]))
+      for poolMemberInfo in (range(indexValue[i][1],indexValue[i+1][1])):
+        if 'ltm pool' in lines[poolMemberInfo]:
+          poolName=lines[poolMemberInfo].split()[-2]
+        if ':' in lines[poolMemberInfo]:
+          poolMemberHostname=lines[poolMemberInfo].strip().split()[-2]
+        if 'address' in lines[poolMemberInfo]:
+          poolMemberAddress=lines[poolMemberInfo].split()[-1]
+        if 'state' in lines[poolMemberInfo]:
+          poolMemberState=lines[poolMemberInfo].strip().split()[-1]
+          poolMemberCombine=(poolName + "," + poolMemberHostname + "," + poolMemberAddress + "," + poolMemberState)
+          poolMemberTotal.append(poolMemberCombine)
+      #INCREMENT i TO GO TO THE NEXT POOL   
+      i += 1
+   #SCAN LAST POOL INFO
+   if y == indexValue[-1][-1]:
+     #DECLARE LIST poolMemberLastPoolTotal
+     poolMemberLastPoolTotal=[]
+     with open(openFile,'r+') as f:
+       lines = f.readlines()
+       for lastPoolLoop in (range(y,len(lines))):
+        if 'ltm pool' in lines[lastPoolLoop]:
+          poolName=lines[lastPoolLoop].split()[-2]
+        if ':' in lines[lastPoolLoop]:
+          poolMemberHostname=lines[lastPoolLoop].strip().split()[-2]
+        if 'address' in lines[lastPoolLoop]:
+          poolMemberAddress=lines[lastPoolLoop].split()[-1]
+        if 'state' in lines[lastPoolLoop]:
+          poolMemberState=lines[lastPoolLoop].strip().split()[-1]
+          poolMemberLastPoolCombine=(poolName + "," + poolMemberHostname + "," + poolMemberAddress + "," + poolMemberState)
+          poolMemberLastPoolTotal.append(poolMemberLastPoolCombine)
+ ##COMBINE 2 LIST
+ poolMemberAll=(poolMemberTotal + poolMemberLastPoolTotal)
+ return poolMemberAll
+
+
+
+
+   ##PARKING HERE TO EXTRACT LAST LTM POOL INFORMATION      
+   #  print("Final pool member is in index=",indexValue[-1][0])
+   #    print("Final pool member is in value=",indexValue[-1][-1])
+   ################################################################################################
+
+         
+
+#####################################################
+#indexValue IS THE LIST CONTAINING LTM POOL LINE INDEX AND VALUE eg [(0, 0), (1, 7), (2, 14), (3, 21), (4, 28)] 
+#elemementPosition() IS TO SCAN WHICH LINE CONTAINING "LTM POOL' ALONG WITH ITS INDEX
+elementPosition,indexValue = elementPosition()
+#print ("Element position is:", elementPosition)
+#print ("indexValue is:",indexValue)
+#print ("##########################################")
+#print (loopBetweenPool(indexValueExtract()))
+#indexValueExtract WILL RETURN [[[[[(0, 'ltm pool AAS-MGW-9080 {\n'), (7, 'ltm pool AXACR-csprod1-process-32769 {\n'), (14, 'ltm pool AXACR-csprod1-process-32776 {\n'), (21, 'ltm pool AXACR-csprod1-process-32777 {\n'), (28, 'ltm pool AXACR-filenet-app-80 {\n')]]]]] 
+print ("#################### BORDER BORDER BORDER ####################")
+poolMemberList=loopBetweenPool2nd(indexValueExtract())
+
+for i in poolMemberList:
+ print (i)
