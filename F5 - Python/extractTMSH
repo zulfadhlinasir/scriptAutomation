@@ -1,0 +1,227 @@
+import re
+import pandas as pd
+
+openFile_Vip="SS-PROD-1_vip"
+openFile_Pool="SS-PROD-1_pool"
+         #vipCombine=(vip.split()[-2] + "," + destination.strip().split()[-1] + "," + pool.split()[-1])     
+
+######################################################
+#EXTRACT VIP INFO
+def extractLastIndexandValueVIP():
+  with open(openFile_Vip,'r') as tfile:
+   lines=tfile.readlines()
+   #GET LAST INDEX and VALUE of "ltm virtual" position
+   for index,value in enumerate(lines):
+     if 'ltm virtual' in value:
+       locationVIP=(index,value)
+   #EXTRACT AND UNPACK THE LAST INDEX AND VALUE
+   indexLast,valueLast=locationVIP
+   return indexLast,valueLast
+######################################################
+#INDEXVIPLAST IS THE LAST LINE INDEX CONTAINING "LTM VIRTUAL"
+def loopBetweenVIP(indexVIPLast):
+  with open(openFile_Vip,'r') as tfile:
+   lines=tfile.readlines()
+   vipTotal=[]
+   vipWithPoolCombine=[]
+   vipWithoutPoolCombine=[]
+   for i in range(0,indexVIPLast):
+     if 'ltm virtual' in lines[i]:
+       vip=lines[i]
+       if 'destination' in (lines[i+1]):
+         destination=lines[i+1]
+       if 'pool' in (lines[i+2]):
+         pool=lines[i+2]
+         vipCombine=(vip.split()[-2] + "," + destination.strip().split()[-1] + "," + pool.split()[-1])     
+         vipWithPoolCombine.append(vipCombine)
+       else:
+         vipCombine=(vip.split()[-2] + "," + destination.strip().split()[-1] + ",NA")     
+         vipWithoutPoolCombine.append(vipCombine)
+   #LAST ELEMENT OF VIP IS EXCLUDED FROM THIS TO PREVENT OUT OF BOUND
+   vipPoolCombine= vipWithPoolCombine + vipWithoutPoolCombine
+   for i in range(indexVIPLast,len(lines)):
+     if 'ltm virtual' in lines[i]:
+       vip=lines[i]
+       if 'destination' in (lines[i+1]):
+         destination=lines[i+1]
+       try:
+         if 'pool' in (lines[i+2]):
+           pool=lines[i+2]
+           vipLastLine=(vip + "," + destination + "," + pool)
+       except:
+          pool="NA"
+          vipLastLine=(vip.split()[-2] + "," + destination.strip().split()[-1]+ "," + pool)
+   #Combine ALL VIP (From 1st to last VIP)
+   vipPoolCombine.append(vipLastLine)
+   #RETURN ALL VIP INFO
+   return vipPoolCombine
+
+
+######################################################
+
+##########################################################################################################
+
+#####################################################
+#FOR POOL 
+def elementPosition():
+  locationPoolCombine=[]
+  with open(openFile_Pool,'r+') as f:
+   lines = f.readlines()
+   for i in (range(0,len(lines))):
+     if 'ltm pool' in lines[i]:
+         locationPool=(i)
+         locationPoolCombine.append(locationPool)
+   enum= (list(enumerate(locationPoolCombine)))
+   return locationPoolCombine,enum;
+       
+
+#####################################################
+##FOR POOL
+#EXTRACT THE INDEX AND VALUE(POOL NAME)
+def indexValueExtract():
+  #with openFile_Pool as f:
+  with open(openFile_Pool,'r+') as f:
+    poolLine=[]
+    lines = f.readlines()
+    l = len(lines)
+    #print ("Length of LTM Pool Info List is:",l)
+    for index,obj in enumerate(lines):
+      if 'ltm pool' in obj:
+        #Print Index with its Value
+        #print ("Index is:",index,"&&& Value is:",obj)
+        poolLineBeforeAppend=(index,obj)
+        poolLine.append(poolLineBeforeAppend)
+    return poolLine
+#####################################################
+
+#####################################################
+##FOR POOL
+def loopBetweenPool2nd(xindexValue):
+ i=0
+ #INITIALIZE LIST
+ poolMemberTotal=[]
+ poolMemberTotalWithOtherPool=[]
+ for x,y in indexValue:
+  #PRINT ACTUALPOOL LIST INDEX AND VALUE
+  #SCAN FROM BEGINNING TO THE SECOND LAST OF LTM POOL
+   if i < x: 
+     with open(openFile_Pool,'r+') as f:
+      lines = f.readlines()
+      #l IS LENGTH OF LIST
+      l = len(lines)
+      #VERIFY IF RANGE IS CORRECTLY RECORDED
+      #print (range(indexValue[i][1],indexValue[i+1][1]))
+      for poolMemberInfo in (range(indexValue[i][1],indexValue[i+1][1])):
+        if 'ltm pool' in lines[poolMemberInfo]:
+          poolName=lines[poolMemberInfo].split()[-2]
+        if ':' in lines[poolMemberInfo]:
+          poolMemberHostname=lines[poolMemberInfo].strip().split()[-2]
+        if 'address' in lines[poolMemberInfo]:
+          poolMemberAddress=lines[poolMemberInfo].split()[-1]
+        if 'state' in lines[poolMemberInfo]:
+          poolMemberState=lines[poolMemberInfo].strip().split()[-1]
+          poolMemberCombine=(poolName + "," + poolMemberHostname + "," + poolMemberAddress + "," + poolMemberState)
+          poolMemberTotal.append(poolMemberCombine)
+      #INCREMENT i TO GO TO THE NEXT POOL   
+      i += 1
+   #SCAN LAST POOL INFO
+   if y == indexValue[-1][-1]:
+     #DECLARE LIST poolMemberLastPoolTotal
+     poolMemberLastPoolTotal=[]
+     with open(openFile_Pool,'r+') as f:
+       lines = f.readlines()
+       for lastPoolLoop in (range(y,len(lines))):
+        if 'ltm pool' in lines[lastPoolLoop]:
+          poolName=lines[lastPoolLoop].split()[-2]
+        if ':' in lines[lastPoolLoop]:
+          poolMemberHostname=lines[lastPoolLoop].strip().split()[-2]
+        if 'address' in lines[lastPoolLoop]:
+          poolMemberAddress=lines[lastPoolLoop].split()[-1]
+        if 'state' in lines[lastPoolLoop]:
+          poolMemberState=lines[lastPoolLoop].strip().split()[-1]
+          poolMemberLastPoolCombine=(poolName + "," + poolMemberHostname + "," + poolMemberAddress + "," + poolMemberState)
+          poolMemberLastPoolTotal.append(poolMemberLastPoolCombine)
+ ##COMBINE 2 LIST
+ poolMemberAll=(poolMemberTotal + poolMemberLastPoolTotal)
+ #RETURN ALL POOL MEMBER INFO
+ return poolMemberAll
+
+
+
+
+   ##PARKING HERE TO EXTRACT LAST LTM POOL INFORMATION      
+   #  print("Final pool member is in index=",indexValue[-1][0])
+   #    print("Final pool member is in value=",indexValue[-1][-1])
+   ################################################################################################
+
+         
+##########################################################################################################
+
+#####################################################
+#CREATE ARRRAY OF VIP AND POOL
+def scanVIPwithPool(passVIPList,passPoolList):
+   combineVIPandPoolTotal=[]
+   for vipLine in passVIPList:
+     for poolLine in passPoolList:
+        #IF THE POOL MEMBER MATCHED WITH VIP
+        if (poolLine.split(",")[-4]) in vipLine:
+           combineVIPandPool=(vipLine+","+poolLine.split(",")[-3] + "," + poolLine.split(",")[-2] + "," +poolLine.split(",")[-1])
+           combineVIPandPoolTotal.append(combineVIPandPool)
+   #vipWithoutPool=([x for x in passVIPList if x.split(",")[-1] not in combineVIPandPoolTotal])
+   #SCAN VIP WITHOUT POOL
+   vipWithoutPoolCombine=[]
+   for vipLine in passVIPList: 
+     if "NA" in vipLine.split(",")[-1]:
+       vipWithoutPool=vipLine
+       vipWithoutPoolCombine.append(vipWithoutPool)
+   #COMBINE ALL VIP LIST
+   combineVIPandPoolTotalCombine=(combineVIPandPoolTotal + vipWithoutPoolCombine)
+   return combineVIPandPoolTotalCombine,combineVIPandPoolTotal
+       
+#####################################################
+
+
+
+##########################################################################################################
+
+#####################################################
+#CREATE CSV
+def createCSV(passtotalVIPandPool,passtotalVIPwithPoolOnly):
+  print ("#")
+  arrayVIPandPoolWithoutComma=[]
+  #REMOVING COMMA IN THE LIST
+  for i in passtotalVIPandPool:
+    arraySplit = (i.split(","))
+    arrayVIPandPoolWithoutComma.append(arraySplit)
+  df = pd.DataFrame(arrayVIPandPoolWithoutComma, columns= ['VIP Name','VIP IP','Pool Name', 'Pool Member Name', 'Pool Member IP', 'Pool Member State'])
+  df.to_csv (f'vipPool.csv',index =False, header=True)
+
+
+#####################################################
+
+
+##########################################################################################################
+
+#####################################################
+#indexValue IS THE LIST CONTAINING LTM POOL LINE INDEX AND VALUE eg [(0, 0), (1, 7), (2, 14), (3, 21), (4, 28)] 
+#elemementPosition() IS TO SCAN WHICH LINE CONTAINING "LTM POOL' ALONG WITH ITS INDEX
+elementPosition,indexValue = elementPosition()
+#print ("Element position is:", elementPosition)
+#print ("indexValue is:",indexValue)
+#print ("##########################################")
+#print (loopBetweenPool(indexValueExtract()))
+#indexValueExtract WILL RETURN [[[[[(0, 'ltm pool poolname {\n'), (7, 'ltm pool poolname-csprod1-process-poolname {\n'), (14, 'ltm pool poolname-poolname-process-poolname {\n'), (21, 'ltm pool poolname-csprod1-process-poolname {\n'), (28, 'ltm pool poolname-filenet-app-poolname {\n')]]]]] 
+print ("#################### BORDER BORDER BORDER ####################")
+#DECLARE POOL MEMBER LIST
+poolList=loopBetweenPool2nd(indexValueExtract())
+
+#DECLARE VIP INFO LIST
+#EXTRACT LAST INDEX and VALUE OF VIP
+indexVIPLast,valueVIPLast=extractLastIndexandValueVIP()
+#PASS INDEXVIPLAST to loopBetweenVIP() TO LOOP PREVENT OUT OF BOUND ARRAY
+vipList=loopBetweenVIP(indexVIPLast)
+#CREATE VIP AND POOL LIST
+totalVIPandPool,totalVIPwithPoolOnly=scanVIPwithPool(vipList,poolList)
+
+#CREATE PANDA LIST
+createCSV(totalVIPandPool,totalVIPwithPoolOnly)
