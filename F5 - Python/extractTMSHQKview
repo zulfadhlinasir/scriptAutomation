@@ -1,0 +1,93 @@
+import re
+import netmiko
+import time          
+import getpass
+from paramiko import SSHClient, AutoAddPolicy
+from scp import SCPClient
+import os
+
+#DEFINING LIST OF COMMAND
+tmshQKview="qkview -f $(echo $HOSTNAME | awk -F. '{print $1}').qkview"
+
+def selectDirAndInventory():
+  print("THIS IS TO EXTRACT QKVIEW")
+  localDirOri=input("which directory you want to store the QKVIEW: ")
+  inventoryFile=input("which inventory file need to be read: ")
+
+  if os.path.isdir(localDirOri) == False:
+    os.mkdir(localDirOri)
+  else:
+    print("Its an existing directory,proceed?")
+  localDir=localDirOri+"/"
+  return localDir,inventoryFile
+
+
+#####################################################################################################
+
+#EXTRACT CREDENTIAL
+def extractCredentialFunct():
+  username="fsafassafsfsfsfsar"
+  password=getpass.getpass(prompt='Password:',stream=None)
+  return username,password
+
+#LOGIN
+def initiateLoginFunct(username,password,hostIP):
+  try:
+    net_connect = netmiko.ConnectHandler(device_type="f5_ltm", ip=hostIP,username=username,password=password, port="22",verbose=True)
+    return net_connect
+  except:
+    print("########Failed to login to ",hostIP.strip())
+
+def saveQKViewFunct(net_connect):
+  try:
+    switchBash= net_connect.send_command_timing(' bash ', delay_factor=2)
+    saveQKView=net_connect.send_command_timing(tmshQKview, read_timeout=0,last_read=60)
+    QKViewNameAndDir=saveQKView.splitlines()[2].split()[0]
+    QKViewName=QKViewNameAndDir.split('/')[3]
+    return QKViewName,QKViewNameAndDir
+  except:
+    print("########Also failed to save its QKView")
+    
+#####################################################################################################
+
+
+#PRINT SYS CONN
+#sysConn= net_connect.send_command_timing(tmshshowSys,delay_factor=15)
+#if "(y/n)" in sysConn:
+#    sysConn= net_connect.send_command_timing("y", read_timeout=400,strip_prompt=True,strip_command=True)
+#print(sysConn)
+
+#####################################################################################################
+
+def readInventoryAndSaveQKViewAndDownloadQKViewFunct():
+  #EXTRACT CREDENTIAL
+  username,password=extractCredentialFunct()
+  ssh = SSHClient()
+  ssh.set_missing_host_key_policy(AutoAddPolicy)
+  failedDeviceCombine=[]
+  with open(inventoryFile) as openingFile:
+    for line in openingFile:
+      #INITIATE SAVE QKVIEW and take QKVIEW name along with its directory
+      try:
+        hostIP=line.split()[1]
+        hostName=line.split()[0]
+        QKViewName,QKViewNameAndDir=saveQKViewFunct(initiateLoginFunct(username,password,hostIP))
+        localFile=localDir+QKViewName
+        #STRIP hostIP to strip trailing newline
+        deviceIP=hostIP.strip()
+        #DISPLAY ATTEMPT TO DOWNLOAD QKVIEWFROM WHICH F5
+        print("Attempting to download ",QKViewName, "from ",hostName)
+        ssh.connect(deviceIP,username=username,password=password)
+        with SCPClient(ssh.get_transport()) as scp:
+          scp.get(QKViewNameAndDir,localFile)
+      except:
+        print("########Something wrong during save/download QKView of device IP:",hostIP.strip())
+        failedDevice=(hostName + "," + hostIP.strip())
+        failedDeviceCombine.append(failedDevice)
+    print("failed device are:",failedDeviceCombine)
+
+  
+#####################################################################################################
+#pass localDir(which directory of local machine) and inventoryFile(device list)
+localDir,inventoryFile=selectDirAndInventory()
+readInventoryAndSaveQKViewAndDownloadQKViewFunct()
