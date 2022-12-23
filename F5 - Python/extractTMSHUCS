@@ -1,19 +1,40 @@
+import re
+import netmiko
+import time          
+import getpass
+from paramiko import SSHClient, AutoAddPolicy
+from scp import SCPClient
+import os
+
 #DEFINE localdir, where you want to save this UCS to 
-localDir="ucsDir/" 
+#localDir="ucsDir/" 
 #INVENTORY FILE
-inventoryFile="T2GuestKapla"
+#inventoryFile="T1GuestSSingal"
 
 #DEFINING LIST OF COMMAND
-tmshsaveUCS="tmsh save sys ucs $(echo $HOSTNAME | awk -F. '{print $1}')_v12_$(date '+%Y%m%d')_initial.ucs"
+tmshsaveUCS="tmsh save sys ucs $(echo $HOSTNAME | awk -F. '{print $1}')" 
+#tmshsaveUCS="tmsh save sys ucs $(echo $HOSTNAME | awk -F. '{print $1}')_v12_$(date '+%Y%m%d')_initial.ucs"
 tmshshowSys="tmsh -q show /sys connection"
 tmshSysCluster="tmsh show sys cluster"
 tmshHostname="tmsh list sys global-settings hostname | grep host"
+
+def selectDirAndInventory():
+  localDirOri=input("which directory you want to store the UCS: ")
+  inventoryFile=input("which inventory file need to be read: ")
+
+  if os.path.isdir(localDirOri) == False:
+    os.mkdir(localDirOri)
+  else:
+    print("Its an existing directory,proceed?")
+  localDir=localDirOri+"/"
+  return localDir,inventoryFile
+
 
 #####################################################################################################
 
 #EXTRACT CREDENTIAL
 def extractCredentialFunct():
-  username="Mohammad.Nasir"
+  username="usernamer"
   password=getpass.getpass(prompt='Password:',stream=None)
   return username,password
 
@@ -73,5 +94,6 @@ def readInventoryAndSaveUCSAndDownloadUCSFunct():
 
   
 #####################################################################################################
-
+#pass localDir(which directory of local machine) and inventoryFile(device list)
+localDir,inventoryFile=selectDirAndInventory()
 readInventoryAndSaveUCSAndDownloadUCSFunct()
