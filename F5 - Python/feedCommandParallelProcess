@@ -1,0 +1,74 @@
+import os
+import getpass
+from netmiko import Netmiko
+from multiprocessing.dummy import Pool as ThreadPool
+
+
+#####################################################################################################
+def selectDirAndInventory():
+  print("THIS IS TO EXTRACT STAT")
+  localDirOri=input("which directory you want to store the STAT: ")
+  if os.path.isdir(localDirOri) == False:
+    os.mkdir(localDirOri)
+  else:
+    print("Its an existing directory,proceed?")
+  localDir=localDirOri+"/"
+
+  inventoryFile=input("which inventory file need to be read: ")
+  commandInput=input("which command file need to be read: ")
+  #TO GET PROVIDE FORMAT OF FILENAME
+  fileNameDraft=input("what filename end with:  ")
+  return localDir,inventoryFile,commandInput,fileNameDraft
+
+#EXTRACT CREDENTIAL
+def extractCredentialFunct():
+  username="fsfsafsasafr"
+  password=getpass.getpass(prompt='Password:',stream=None)
+  return username,password
+
+#EXTRACT HOST IP
+def extractHostIP(inventoryFile):
+  openInventory=open(inventoryFile,'r')
+  hostIPList=openInventory.readlines()
+  return hostIPList
+
+
+#LOGIN
+def initiateLoginFunct(nodeIP):
+  try:
+   s = {
+        'device_type':"f5_ltm", 'ip':nodeIP, 'username':username,
+        'password':password, 'port':"22",'verbose':False
+        }
+   switch = Netmiko(**s)
+   print("########",nodeIP.strip() + " " + "is reachable")
+   #EXTRACT HOSTNAME
+   prompt_sw_axa = switch.find_prompt()
+   slice1 = (prompt_sw_axa.split(')')[0])
+   hostName= slice1.split("(")[1]
+   #SWITCH TO BASH SHELL IN F5
+   switchToBash=switch.send_command_timing("bash",read_timeout=0)
+   #CREATE FILENAME CORRESPONDING TO HOSTNAME
+   fileName=localDir+hostName+"_"+fileNameDraft 
+   with open(fileName,'w') as creatingFile:
+     #READ COMMAND LIST FROM SELECTED FILE
+     with open(commandInput) as openingCommandList:
+       for line in openingCommandList:
+         commandToRun=line.strip()
+         runningCommand=switch.send_command_timing(commandToRun, read_timeout=0)
+         creatingFile.write("\n##########################" + commandToRun + "##########################\n")         
+         creatingFile.write("####################################################\n")
+         creatingFile.write(runningCommand)
+   switch.disconnect()
+  except Exception as e:
+    #print (e)
+    print("########Failed to login to: ",nodeIP.strip())
+#####################################################################################################
+
+#INVENTORY INPUT and SET DIR
+localDir,inventoryFile,commandInput,fileNameDraft=selectDirAndInventory()
+#EXTRACT CREDENTIAL
+username,password=extractCredentialFunct()
+
+myPool = ThreadPool(100)
+myPool.map(initiateLoginFunct,extractHostIP(inventoryFile))
