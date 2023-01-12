@@ -1,0 +1,80 @@
+import os
+import getpass
+from netmiko import Netmiko
+from multiprocessing.dummy import Pool as ThreadPool
+from paramiko import SSHClient, AutoAddPolicy
+from scp import SCPClient
+
+
+#####################################################################################################
+def selectDirAndInventory():
+  print("THIS IS TO EXTRACT QKVIEW")
+  localDirOri=input("which directory you want to store the QKVIEW: ")
+  if os.path.isdir(localDirOri) == False:
+    os.mkdir(localDirOri)
+  else:
+    print("Its an existing directory,proceed?")
+  localDir=localDirOri+"/"
+
+  inventoryFile=input("which inventory file need to be read: ")
+  return localDir,inventoryFile
+
+#EXTRACT CREDENTIAL
+def extractCredentialFunct():
+  username="fsafsaf.fsafsaf"
+  password=getpass.getpass(prompt='Password:',stream=None)
+  return username,password
+
+#EXTRACT HOST IP
+def extractHostIP(inventoryFile):
+  openInventory=open(inventoryFile,'r')
+  hostIPList=openInventory.readlines()
+  return hostIPList
+
+
+#LOGIN
+def createQKviewFunct(nodeIP):
+  try:
+   s = {
+        'device_type':"f5_ltm", 'ip':nodeIP, 'username':username,
+        'password':password, 'port':"22",'verbose':False
+        }
+   switch = Netmiko(**s)
+   print("########",nodeIP.strip() + " " + "is reachable")
+   #EXTRACT HOSTNAME
+   prompt_sw_axa = switch.find_prompt()
+   slice1 = (prompt_sw_axa.split(')')[0])
+   hostName= slice1.split("(")[1]
+   #SWITCH TO BASH SHELL IN F5
+   switchToBash=switch.send_command_timing("bash",read_timeout=0)
+   saveQKView=switch.send_command_timing("qkview -f "+hostName+".qkview",read_timeout=0,last_read=120)
+   QKViewNameAndDir=saveQKView.splitlines()[2].split()[0]
+   QKViewName=QKViewNameAndDir.split('/')[3]
+   switch.disconnect()
+   
+   ssh = SSHClient()
+   ssh.set_missing_host_key_policy(AutoAddPolicy)
+   #DOWNLOAD QKView 
+   try:
+     #DEFINE DIR and QKView 
+     localFile=localDir+QKViewName
+     #DISPLAY ATTEMPT TO DOWNLOAD QKVIEW FROM WHICH F5
+     print("########Attempting to download ",QKViewName, "from ",nodeIP.strip()," ",hostName)
+     ssh.connect(nodeIP.strip(),username=username,password=password)
+     with SCPClient(ssh.get_transport()) as scp:
+       scp.get(QKViewNameAndDir,localFile)
+   except Exception as e: 
+     print(e)
+     print("########Failed to download QKView from: ",nodeIP.strip()," ",hostName)
+  except Exception as e:
+    print (e)
+    print("########Failed to create QKView, from: ",nodeIP.strip()," ",hostName)
+#####################################################################################################
+
+#INVENTORY INPUT and SET DIR
+localDir,inventoryFile=selectDirAndInventory()
+#EXTRACT CREDENTIAL
+username,password=extractCredentialFunct()
+myPool = ThreadPool(100)
+#THIS FUNCTION WILL INITIATE LOGIN, RUN COMMAND, AND WRITE THE OUTPUT TO FILE
+myPool.map(createQKviewFunct,extractHostIP(inventoryFile))
