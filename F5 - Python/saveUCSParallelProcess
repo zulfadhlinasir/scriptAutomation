@@ -8,8 +8,8 @@ from scp import SCPClient
 
 #####################################################################################################
 def selectDirAndInventory():
-  print("THIS IS TO EXTRACT STAT")
-  localDirOri=input("which directory you want to store the STAT: ")
+  print("THIS IS TO EXTRACT UCS")
+  localDirOri=input("which directory you want to store the UCS: ")
   if os.path.isdir(localDirOri) == False:
     os.mkdir(localDirOri)
   else:
@@ -21,7 +21,7 @@ def selectDirAndInventory():
 
 #EXTRACT CREDENTIAL
 def extractCredentialFunct():
-  username="fsafsafsar"
+  username="xxxxx"
   password=getpass.getpass(prompt='Password:',stream=None)
   return username,password
 
@@ -41,12 +41,11 @@ def createUCSFunct(nodeIP):
         }
    switch = Netmiko(**s)
    print("########",nodeIP.strip() + " " + "is reachable")
-   #EXTRACT HOSTNAME
-   prompt_sw_axa = switch.find_prompt()
-   slice1 = (prompt_sw_axa.split(')')[0])
-   hostName= slice1.split("(")[1]
    #SWITCH TO BASH SHELL IN F5
    switchToBash=switch.send_command_timing("bash",read_timeout=0)
+   #EXTRACT HOSTNAME
+   extractHostname=switch.send_command_timing("tmsh list sys global-settings hostname  | grep hostname | awk -F\" \" '{print$ 2}'",read_timeout=0)
+   hostName=extractHostname.split(".")[0]
    saveUCS=switch.send_command_timing("tmsh save sys ucs "+hostName,read_timeout=0,last_read=10)
    ucsNameAndDir=saveUCS.splitlines()[1].split()[0]
    ucsName=ucsNameAndDir.split('/')[4]
