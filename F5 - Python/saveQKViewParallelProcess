@@ -21,7 +21,7 @@ def selectDirAndInventory():
 
 #EXTRACT CREDENTIAL
 def extractCredentialFunct():
-  username="fsafsaf.fsafsaf"
+  username="xxxxxxxxxr"
   password=getpass.getpass(prompt='Password:',stream=None)
   return username,password
 
@@ -41,12 +41,11 @@ def createQKviewFunct(nodeIP):
         }
    switch = Netmiko(**s)
    print("########",nodeIP.strip() + " " + "is reachable")
-   #EXTRACT HOSTNAME
-   prompt_sw_axa = switch.find_prompt()
-   slice1 = (prompt_sw_axa.split(')')[0])
-   hostName= slice1.split("(")[1]
    #SWITCH TO BASH SHELL IN F5
    switchToBash=switch.send_command_timing("bash",read_timeout=0)
+   #EXTRACT HOSTNAME
+   extractHostname=switch.send_command_timing("tmsh list sys global-settings hostname  | grep hostname | awk -F\" \" '{print$ 2}'",read_timeout=0)
+   hostName=extractHostname.split(".")[0]
    saveQKView=switch.send_command_timing("qkview -f "+hostName+".qkview",read_timeout=0,last_read=120)
    QKViewNameAndDir=saveQKView.splitlines()[2].split()[0]
    QKViewName=QKViewNameAndDir.split('/')[3]
