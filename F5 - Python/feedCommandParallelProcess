@@ -22,7 +22,7 @@ def selectDirAndInventory():
 
 #EXTRACT CREDENTIAL
 def extractCredentialFunct():
-  username="fsfsafsasafr"
+  username="xxxxxxxxxr"
   password=getpass.getpass(prompt='Password:',stream=None)
   return username,password
 
@@ -42,12 +42,11 @@ def initiateLoginFunct(nodeIP):
         }
    switch = Netmiko(**s)
    print("########",nodeIP.strip() + " " + "is reachable")
-   #EXTRACT HOSTNAME
-   prompt_sw_axa = switch.find_prompt()
-   slice1 = (prompt_sw_axa.split(')')[0])
-   hostName= slice1.split("(")[1]
    #SWITCH TO BASH SHELL IN F5
    switchToBash=switch.send_command_timing("bash",read_timeout=0)
+   #EXTRACT HOSTNAME
+   extractHostname=switch.send_command_timing("tmsh list sys global-settings hostname  | grep hostname | awk -F\" \" '{print$ 2}'",read_timeout=0)
+   hostName=extractHostname.split(".")[0]
    #CREATE FILENAME CORRESPONDING TO HOSTNAME
    fileName=localDir+hostName+"_"+fileNameDraft 
    with open(fileName,'w') as creatingFile:
@@ -56,8 +55,7 @@ def initiateLoginFunct(nodeIP):
        for line in openingCommandList:
          commandToRun=line.strip()
          runningCommand=switch.send_command_timing(commandToRun, read_timeout=0)
-         creatingFile.write("\n##########################" + commandToRun + "##########################\n")         
-         creatingFile.write("####################################################\n")
+         creatingFile.write("\n########################## (" + commandToRun + ") ##########################\n\n")         
          creatingFile.write(runningCommand)
    switch.disconnect()
   except Exception as e:
