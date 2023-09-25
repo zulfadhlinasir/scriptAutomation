@@ -1,0 +1,100 @@
+import re ,time, requests
+from f5.bigip import ManagementRoot
+from datetime import datetime
+
+mydict = {}
+#DEFINE CREDENTIAL INPUT
+credentials = open("tipu","r").readlines()
+
+
+today = datetime.today()
+print(" Date and time now : {}".format(today))
+
+#######################################################################################################
+def extract_F5_VIP(ipaddress,hostname,username, password):
+  issueCombine=[]
+  try:
+    mgmt = ManagementRoot(ipaddress, username, password , token = True) # BigIP API Connection
+    ltm = mgmt.tm.ltm
+    ##############CHECK REACHABILITY and LOGIN
+    #print("########################LOGIN SUCCESS#############################\n"+hostname + " " + " ( " + ipaddress + " ) "  + " " + "is reachable \n" + "-"*20)
+    print(hostname,ipaddress, "successful login")
+   
+    ##############CAPTURE VIP INFO##############
+    vipCombine=[]
+    vipRaw= mgmt.tm.ltm.virtuals.get_collection() 
+    for vip in vipRaw:
+      vipName=vip.name
+      if (hasattr(vip,"pool")):
+        vipPool=vip.pool
+      else:
+        vipPool="NA"
+      vipDestination=vip.destination
+      vipCollect=(hostname,vipName,vipDestination,vipPool)
+      vipCombine.append(vipCollect)
+    ##############CAPTURE POOL INFO##############
+    poolCombine=[]
+    poolRaw= mgmt.tm.ltm.pools.get_collection()
+    for pool in ltm.pools.get_collection():
+      for member in pool.members_s.get_collection():
+        poolCollect=(hostname,pool.name,member.name,member.address,member.state)
+        poolCombine.append(poolCollect)
+    ##############MATCHING VIP and POOL INFO##############    
+    vipPoolCombine=[]
+    ####EXTRACT VIP THAT HAVING POOL
+    for vip in vipCombine:
+      for pool in poolCombine:
+         if pool[1] in vip[3]:
+           vipPool=(vip[0],vip[1],vip[2],vip[3],pool[2],pool[3],pool[4])
+           vipPoolCombine.append(vipPool)
+    #####EXTRACT VIP THAT NOT HAVING POOL
+    for vip in vipCombine:
+      if vip[3] == "NA":
+        vipPoolCombine.append(vip)
+    #RETURN THE VALUE CAPTURE
+    return(vipPoolCombine)
+  except Exception as e:        
+     #print("########################ISSUE DETECTED#############################")
+     #print(e, "for", hostname , ipaddress)  
+     #print("\n"+hostname + " " + " ( " + ipaddress + " ) "  + " " + "is UNreachable \n" + "-"*60)
+     issue=(e, "for", hostname , ipaddress)
+     issueCombine.append(issue)
+
+#######################################################################################################
+def convertList_to_Dict(combineVIPPoolAll):
+  combineVIPPoolAll_Dict=[]
+  dictHeaders=['F5 Hostname','VIP Name','VIP IP','Pool Name','Pool Member Name','Pool Member IP','Pool Member State']
+  for x in combineVIPPoolAll:
+    for y in x:
+      combineVIPPoolAll_Dict.append(dict(zip(dictHeaders,y)))
+  return(combineVIPPoolAll_Dict)
+ 
+#######################################################################################################
+
+#EXTRACT CREDENTIALi INFO
+username = credentials[0].split("\n")[0]
+password = credentials[1].split("\n")[0]
+#EXTRACT INVENTORY AND CALL THE FUNCTION
+#inventory=open("f5List","r") 
+inventory=open("AllF5List","r") 
+
+#DECLARE combineVIP list
+combineVIPPoolAll=[]
+hostEmtpyCombine=[]
+#EXTRACT VIP and POOL INFO, and COMBINE
+for line in inventory:
+ hostName,ipAddress=line.split()
+ #extract_F5_VIP(ipAddress,hostName,username, password)
+ vipPoolCombine=extract_F5_VIP(ipAddress,hostName,username, password)
+ if(vipPoolCombine):
+   combineVIPPoolAll.append(vipPoolCombine)
+ else:
+   print(hostName,ipAddress,"are having empty VIP")
+   #hostEmpty=(hostName,ipAddress,"are having empty VIP")
+   #hostEmtpyCombine.append(hostEmpty)
+ 
+
+#CONVERT LIST TO DICT
+#convertList_to_Dict(combineVIPPoolAll)
+combineVIPPoolAll_Dict=(convertList_to_Dict(combineVIPPoolAll))
+print(combineVIPPoolAll_Dict)
